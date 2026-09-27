@@ -18,6 +18,7 @@ const ui = {
 
 const CATS = ['Pecho', 'Espalda', 'Piernas', 'Hombros', 'Bíceps', 'Tríceps', 'Core', 'Otro'];
 const TYPES = [['libre', 'Peso libre'], ['maquina', 'Máquina'], ['corporal', 'Peso corporal'], ['lastre', 'Peso corporal + lastre'], ['otro', 'Otro']];
+const useRir = () => !!D.settings.useRir;
 const typeLabel = k => (TYPES.find(t => t[0] === k) || [])[1] || '';
 
 const METRICS = [
@@ -401,8 +402,8 @@ VIEWS.workout = () => {
       <div class="wex-prev">${prev ? `<span>Anterior</span><b>${esc(Stats.setsStr(prev.sets))}</b><em>${Fmt.dShort(prev.date)}</em>` : '<span>Primera vez · sin registros previos</span>'}</div>
       ${t.notes ? `<div class="wex-note">${I.note}<span>${esc(t.notes)}</span></div>` : ''}
       ${e.note ? `<div class="wex-note mine">${I.note}<span>${esc(e.note)}</span></div>` : ''}
-      <div class="sets">
-        <div class="set-h"><span>SERIE</span><span>ANTERIOR</span><span>${wLabel}</span><span>REPS</span><span>RIR</span><span></span></div>`;
+      <div class="sets${useRir() ? '' : ' no-rir'}">
+        <div class="set-h"><span>SERIE</span><span>ANTERIOR</span><span>${wLabel}</span><span>REPS</span>${useRir() ? '<span>RIR</span>' : ''}<span></span></div>`;
     e.sets.forEach((s, si) => {
       const ps = prev && prev.sets[si];
       const wPh = ps ? inp(ps.w) : (t.weight ? inp(t.weight) : '0');
@@ -412,7 +413,7 @@ VIEWS.workout = () => {
         <span class="set-prev">${ps ? (ps.w > 0 ? Fmt.n(ps.w, 2) + '×' : '') + ps.r : '—'}</span>
         <input class="inp" inputmode="decimal" data-f="weight" value="${esc(s.weight)}" placeholder="${esc(wPh)}" aria-label="Peso">
         <input class="inp" inputmode="numeric" enterkeyhint="done" data-f="reps" value="${esc(s.reps)}" placeholder="${esc(rPh)}" aria-label="Reps">
-        <input class="inp rir" inputmode="numeric" data-f="rir" value="${esc(s.rir)}" placeholder="–" aria-label="RIR">
+        ${useRir() ? `<input class="inp rir" inputmode="numeric" data-f="rir" value="${esc(s.rir)}" placeholder="–" aria-label="RIR">` : ''}
         <button class="chk" data-a="toggleSet" data-ei="${ei}" data-si="${si}" aria-label="Completar serie">${I.check}</button>
       </div>`;
       if (s.note || s.doubtful) h += `<div class="set-sub">${s.doubtful ? '<span class="tag">Dudosa · no cuenta para PR</span>' : ''}${s.note ? esc(s.note) : ''}</div>`;
@@ -434,6 +435,7 @@ VIEWS.workout = () => {
 };
 
 function cmpBlock(items, title) {
+  if (items && !useRir()) items = items.filter(it => !/RIR/.test(it.label));
   if (!items || !items.length) return '';
   return `<div class="cmp">${title ? `<div class="cmp-t">${esc(title)}</div>` : ''}${items.map(it =>
     `<div class="cmp-r t-${it.tone}"><span>${esc(it.label)}</span><b>${esc(it.text)}</b></div>`).join('')}</div>`;
@@ -444,9 +446,9 @@ SHEETS.setMenu = s => {
   const rir = num(st.rir);
   return sheetHead(`Serie ${s.si + 1}`, exName(e)) + `
     <div class="form">
-      <div class="field"><span>RIR <small>(reps en reserva)</small></span><div class="chips">
+      ${useRir() ? `<div class="field"><span>RIR <small>(reps en reserva)</small></span><div class="chips">
         ${[0, 1, 2, 3, 4, 5].map(v => `<button class="chip num${rir === v ? ' on' : ''}" data-a="setRir" data-v="${v}">${v}</button>`).join('')}
-        <button class="chip${rir == null ? ' on' : ''}" data-a="setRir" data-v="">—</button></div></div>
+        <button class="chip${rir == null ? ' on' : ''}" data-a="setRir" data-v="">—</button></div></div>` : ''}
       <button class="toggle${st.doubtful ? ' on' : ''}" data-a="setDoubt"><span class="tg"></span><span><b>Serie dudosa</b><small>Técnica o rango dudosos: se guarda pero no cuenta para PRs</small></span></button>
       <label class="field"><span>Nota</span><textarea id="setnote" data-bind="set.note" rows="2" placeholder="Opcional">${esc(st.note)}</textarea></label>
       <button class="btn btn-primary btn-block" data-a="closeSheet">Listo</button>
@@ -669,10 +671,10 @@ VIEWS.session = () => {
     const ex = exById(e.exerciseId);
     const vol = e.sets.reduce((a, x) => a + (x.weight || 0) * (x.reps || 0), 0);
     h += `<div class="card"><div class="card-h"><b>${esc(exName(e))}</b>${ex ? `<button class="link" data-a="openAnalysis" data-id="${ex.id}">Análisis ${I.right}</button>` : ''}</div>
-      <table class="tbl"><thead><tr><th>Serie</th><th>Peso</th><th>Reps</th><th>RIR</th><th>Vol.</th></tr></thead><tbody>
-      ${e.sets.map((x, i) => `<tr class="${x.doubtful ? 'dub' : ''}"><td>${i + 1}${x.doubtful ? ' <span class="tag">dudosa</span>' : ''}</td><td>${Fmt.kg(x.weight)}</td><td>${x.reps}</td><td>${x.rir != null ? Fmt.n(x.rir) : '—'}</td><td>${Fmt.n((x.weight || 0) * x.reps, 0)}</td></tr>
-        ${x.note ? `<tr class="note-r"><td colspan="5">${esc(x.note)}</td></tr>` : ''}`).join('')}
-      </tbody><tfoot><tr><td>Total</td><td></td><td>${e.sets.reduce((a, x) => a + x.reps, 0)}</td><td></td><td>${Fmt.n(vol, 0)}</td></tr></tfoot></table>
+      <table class="tbl"><thead><tr><th>Serie</th><th>Peso</th><th>Reps</th>${useRir() ? '<th>RIR</th>' : ''}<th>Vol.</th></tr></thead><tbody>
+      ${e.sets.map((x, i) => `<tr class="${x.doubtful ? 'dub' : ''}"><td>${i + 1}${x.doubtful ? ' <span class="tag">dudosa</span>' : ''}</td><td>${Fmt.kg(x.weight)}</td><td>${x.reps}</td>${useRir() ? `<td>${x.rir != null ? Fmt.n(x.rir) : '—'}</td>` : ''}<td>${Fmt.n((x.weight || 0) * x.reps, 0)}</td></tr>
+        ${x.note ? `<tr class="note-r"><td colspan="${useRir() ? 5 : 4}">${esc(x.note)}</td></tr>` : ''}`).join('')}
+      </tbody><tfoot><tr><td>Total</td><td></td><td>${e.sets.reduce((a, x) => a + x.reps, 0)}</td>${useRir() ? '<td></td>' : ''}<td>${Fmt.n(vol, 0)}</td></tr></tfoot></table>
       ${e.note ? `<p class="wex-note mine">${I.note}<span>${esc(e.note)}</span></p>` : ''}
       ${r && r.cmp ? cmpBlock(r.cmp, 'vs sesión anterior (' + Fmt.date(r.prev.date) + ')') : ''}</div>`;
   }
@@ -784,8 +786,8 @@ VIEWS.exercise = () => {
     <div><small>Sesiones</small><b>${hist.length}</b></div></div>`;
 
   // ---- gráfico
-  const mDef = METRICS.find(m => m.k === ui.chart.metric) || METRICS[0];
-  h += `<div class="card chart-card"><div class="chips scroll">${METRICS.map(m => `<button class="chip${m.k === mDef.k ? ' on' : ''}" data-a="chartMetric" data-v="${m.k}">${m.label}</button>`).join('')}</div>`;
+  const mDef = METRICS.find(m => m.k === ui.chart.metric && (m.k !== 'rir' || useRir())) || METRICS.find(m => m.k === 'e1rm');
+  h += `<div class="card chart-card"><div class="chips scroll">${METRICS.filter(m => m.k !== 'rir' || useRir()).map(m => `<button class="chip${m.k === mDef.k ? ' on' : ''}" data-a="chartMetric" data-v="${m.k}">${m.label}</button>`).join('')}</div>`;
   let svg, pts;
   if (mDef.bars) {
     const b = freqBuckets(hist, ui.chart.range);
@@ -810,9 +812,9 @@ VIEWS.exercise = () => {
     ['Reps máx.', x => x.m.maxR, v => Fmt.n(v, 0), 1],
     ['Volumen', x => x.m.vol || null, v => Fmt.n(v, 0), 1],
     ['Reps/serie', x => x.m.avgR, v => Fmt.n(v, 1), 1],
-    ['RIR medio', x => x.m.avgRir, v => Fmt.n(v, 1), 0],
   ];
   let trRows = '';
+  if (useRir()) TR.push(['RIR medio', x => x.m.avgRir, v => Fmt.n(v, 1), 0]);
   for (const [label, get, f, directional] of TR) {
     const t = Stats.trend(hist, get);
     if (!t) continue;
@@ -839,8 +841,8 @@ VIEWS.exercise = () => {
     ${hasW ? kv('Mayor producto peso × reps', Fmt.n(Math.max(...cSets.map(s => s.w * s.r), 0), 1)) : ''}
   </div>`;
   if (hasW && weights.length) {
-    h += `<div class="card"><div class="card-h"><b>Mejor rendimiento por peso</b></div><table class="tbl"><thead><tr><th>Peso</th><th>Reps</th><th>RIR</th><th>e1RM</th><th>Fecha</th></tr></thead><tbody>
-      ${weights.slice(0, 12).map(w => { const s = byW[w]; const e = Stats.e1rm(s.w, s.r); return `<tr><td>${Fmt.kg(w)}</td><td><b>${s.r}</b></td><td>${s.rir != null ? Fmt.n(s.rir) : '—'}</td><td>${e ? Fmt.n(e, 1) : '—'}</td><td>${Fmt.dShort(s.date)}</td></tr>`; }).join('')}
+    h += `<div class="card"><div class="card-h"><b>Mejor rendimiento por peso</b></div><table class="tbl"><thead><tr><th>Peso</th><th>Reps</th>${useRir() ? '<th>RIR</th>' : ''}<th>e1RM</th><th>Fecha</th></tr></thead><tbody>
+      ${weights.slice(0, 12).map(w => { const s = byW[w]; const e = Stats.e1rm(s.w, s.r); return `<tr><td>${Fmt.kg(w)}</td><td><b>${s.r}</b></td>${useRir() ? `<td>${s.rir != null ? Fmt.n(s.rir) : '—'}</td>` : ''}<td>${e ? Fmt.n(e, 1) : '—'}</td><td>${Fmt.dShort(s.date)}</td></tr>`; }).join('')}
     </tbody></table></div>`;
   }
 
@@ -882,7 +884,7 @@ VIEWS.exercise = () => {
   const m5 = mean(totals5);
   const cv5 = totals5.length >= 2 && m5 ? Math.sqrt(mean(totals5.map(v => (v - m5) ** 2))) / m5 : null;
   h += `<div class="sec-h"><h3>Consistencia</h3></div><div class="card kvs">
-    ${kv('RIR promedio', rirs.length ? Fmt.n(mean(rirs), 1) : '—', rirs.length ? `${rirs.length} series con RIR` : 'sin RIR registrado')}
+    ${useRir() ? kv('RIR promedio', rirs.length ? Fmt.n(mean(rirs), 1) : '—', rirs.length ? `${rirs.length} series con RIR` : 'sin RIR registrado') : ''}
     ${kv('Reps promedio por serie', Fmt.n(totReps / totSets, 1))}
     ${kv('Diferencia 1ª vs última serie', multi.length ? Fmt.signed(-mean(multi.map(x => x.m.firstLast)), 1, ' reps') : '—', 'promedio por sesión (caída de reps)')}
     ${kv('Variación entre series', multi.length ? Fmt.n(mean(multi.map(x => x.m.cv)) * 100, 1) + ' %' : '—', 'coef. de variación de reps dentro de la sesión')}
@@ -926,6 +928,7 @@ VIEWS.settings = () => {
     <div class="sec-h"><h3>Entrenamiento</h3></div>
     <div class="card form">
       <div class="row2"><span class="lbl">Descanso predeterminado</span>${stepper('settings', 'defaultRest', st.defaultRest)}</div>
+      <button class="toggle${st.useRir ? ' on' : ''}" data-a="setToggle" data-k="useRir"><span class="tg"></span><span><b>Registrar RIR</b><small>Reps en reserva por serie (opcional)</small></span></button>
       <button class="toggle${st.sound ? ' on' : ''}" data-a="setToggle" data-k="sound"><span class="tg"></span><span><b>Sonido al terminar el descanso</b></span></button>
       <button class="toggle${st.vibrate ? ' on' : ''}" data-a="setToggle" data-k="vibrate"><span class="tg"></span><span><b>Vibración</b></span></button>
     </div>
@@ -940,7 +943,7 @@ VIEWS.settings = () => {
       <label class="btn btn-ghost btn-block">Importar copia<input type="file" id="importFile" accept="application/json,.json" hidden></label>
       <button class="btn btn-text danger btn-block" data-a="resetData">Borrar todos los datos</button>
     </div>
-    <p class="foot-note">Hierro · v1.2</p>`;
+    <p class="foot-note">Hierro · v1.3</p>`;
 };
 
 /* ============================== sheets ============================== */

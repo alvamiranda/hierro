@@ -10,7 +10,7 @@ const Store = (() => {
     routines: [],    // {id, name, items:[{id, exerciseId, sets, repMin, repMax, weight, rest, notes}], createdAt}
     sessions: [],    // {id, routineId, routineName, start, end, exercises:[{exerciseId, name, target, note, sets:[{weight, reps, rir, note, doubtful, done, at}]}]}
     active: null,    // entrenamiento en curso (misma forma que una sesión + timer)
-    settings: { defaultRest: 120, theme: 'auto', sound: true, vibrate: true, importedPacks: [] },
+    settings: { defaultRest: 120, theme: 'auto', sound: true, vibrate: true, importedPacks: [], useRir: false },
   });
 
   let data = blank();
