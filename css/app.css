@@ -129,6 +129,11 @@ body.has-timer .view.with-tabs { padding-bottom: calc(var(--tab-h) + var(--timer
 .pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--accent-ink); animation: pulse 1.4s infinite; flex: none; }
 @keyframes pulse { 50% { opacity: .25; } }
 
+.pack { background: var(--surface); border: 1px solid var(--accent-text); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+.pack-t b { display: block; }
+.pack-t small { color: var(--muted); font-size: 13px; }
+.pack-b { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+
 .empty { text-align: center; padding: 36px 20px 10px; color: var(--muted); }
 .empty p { margin: 4px 0; }
 .empty b { color: var(--text); }

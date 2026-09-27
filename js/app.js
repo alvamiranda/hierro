@@ -12,6 +12,7 @@ const ui = {
   chart: { metric: 'e1rm', range: '10s' },
   chartPts: [],
   exQuery: '', exCat: '',
+  packs: [],
   lastRest: null,
 };
 
@@ -187,6 +188,11 @@ VIEWS.home = () => {
     const tot = a.exercises.reduce((n, e) => n + e.sets.length, 0);
     h += `<button class="resume" data-a="resume"><span class="pulse"></span>
       <span class="resume-t"><b>Entrenamiento en curso</b><small>${esc(a.routineName)} · <span data-tick="elapsed"></span> · ${done}/${tot} series</small></span>${I.right}</button>`;
+  }
+  for (const p of ui.packs) {
+    h += `<div class="pack"><div class="pack-t"><b>${esc(p.title)}</b><small>${esc(p.desc || '')}</small></div>
+      <div class="pack-b"><button class="btn btn-text btn-sm" data-a="packLater" data-id="${esc(p.id)}">Ahora no</button>
+      <button class="btn btn-primary btn-sm" data-a="packImport" data-id="${esc(p.id)}">Importar</button></div></div>`;
   }
   if (!D.routines.length) {
     h += `<div class="empty"><div class="empty-ic">${I.lift}</div><p><b>Todavía no tenés rutinas.</b></p>
@@ -934,7 +940,7 @@ VIEWS.settings = () => {
       <label class="btn btn-ghost btn-block">Importar copia<input type="file" id="importFile" accept="application/json,.json" hidden></label>
       <button class="btn btn-text danger btn-block" data-a="resetData">Borrar todos los datos</button>
     </div>
-    <p class="foot-note">Hierro · v1.1</p>`;
+    <p class="foot-note">Hierro · v1.2</p>`;
 };
 
 /* ============================== sheets ============================== */
@@ -1091,6 +1097,21 @@ const A = {
     });
   },
   exCat: el => { ui.exCat = el.dataset.v; render(); },
+  packLater: el => { ui.packs = ui.packs.filter(p => p.id !== el.dataset.id); render(); },
+  packImport: async el => {
+    const p = ui.packs.find(x => x.id === el.dataset.id);
+    if (!p) return;
+    try {
+      const res = await fetch('importar/' + p.file, { cache: 'no-store' });
+      if (!res.ok) throw new Error('No se pudo descargar');
+      const r = Store.merge(await res.json());
+      D.settings.importedPacks = [...(D.settings.importedPacks || []), p.id];
+      Store.save();
+      ui.packs = ui.packs.filter(x => x.id !== p.id);
+      render();
+      toast(importMsg('Importado', r));
+    } catch (e) { toast('Sin conexión: probá de nuevo con internet'); }
+  },
   openAnalysis: el => { closeSheet(false); go('exercise', { id: el.dataset.id }); },
   chartMetric: el => { ui.chart.metric = el.dataset.v; render(); },
   chartRange: el => { ui.chart.range = el.dataset.v; render(); },
@@ -1317,8 +1338,14 @@ document.addEventListener('change', e => {
   const reader = new FileReader();
   reader.onload = () => {
     confirmBox({
-      title: '¿Importar esta copia?', text: 'Reemplaza todos los datos actuales por los del archivo.', ok: 'Importar', danger: true,
+      title: '¿Importar esta copia?', text: '«Agregar» suma lo que falte sin borrar nada. «Reemplazar» borra todo lo actual.',
+      ok: 'Agregar a mis datos',
       onOk: () => {
+        try { const r = Store.merge(reader.result); tab('home'); toast(importMsg('Agregado', r)); }
+        catch (err) { toast(err.message || 'Archivo no válido'); }
+      },
+      alt: 'Reemplazar todo', altDanger: true,
+      onAlt: () => {
         try { D = Store.importJSON(reader.result); applyTheme(); tab('home'); toast('Copia importada'); }
         catch (err) { toast(err.message || 'Archivo no válido'); }
       },
@@ -1341,6 +1368,21 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyThe
 applyTheme();
 history.replaceState({ d: 0 }, '');
 render();
+
+const importMsg = (t, r) => `${t}: ${r.ex} ${r.ex === 1 ? 'ejercicio' : 'ejercicios'}, ${r.rt} ${r.rt === 1 ? 'rutina' : 'rutinas'}, ${r.ses} ${r.ses === 1 ? 'sesión' : 'sesiones'}`;
+
+/** datos publicados para importar (importar/index.json), una sola vez por paquete */
+async function checkPacks() {
+  if (!location.protocol.startsWith('http')) return;
+  try {
+    const res = await fetch('importar/index.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const done = D.settings.importedPacks || [];
+    ui.packs = (await res.json()).filter(p => !done.includes(p.id));
+    if (ui.packs.length && ui.view === 'home' && !ui.sheet) render();
+  } catch (e) { /* sin conexión */ }
+}
+checkPacks();
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
