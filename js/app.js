@@ -934,7 +934,7 @@ VIEWS.settings = () => {
       <label class="btn btn-ghost btn-block">Importar copia<input type="file" id="importFile" accept="application/json,.json" hidden></label>
       <button class="btn btn-text danger btn-block" data-a="resetData">Borrar todos los datos</button>
     </div>
-    <p class="foot-note">Hierro · v1</p>`;
+    <p class="foot-note">Hierro · v1.1</p>`;
 };
 
 /* ============================== sheets ============================== */

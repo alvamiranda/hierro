@@ -1,5 +1,5 @@
 /* Service worker: deja la app disponible sin conexión (cache-first del "shell"). */
-const CACHE = 'hierro-v2';
+const CACHE = 'hierro-v3';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/util.js', 'js/icons.js', 'js/store.js', 'js/stats.js', 'js/charts.js', 'js/app.js',
