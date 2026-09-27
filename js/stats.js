@@ -10,10 +10,10 @@ const Stats = (() => {
     return r === 1 ? w : w * (1 + r / 30);
   }
 
-  /** Series completadas con reps > 0, normalizadas a {w, r, rir, doubtful, note} */
+  /** Series de trabajo completadas (sin calentamiento), normalizadas a {w, r, rir, doubtful, note} */
   function validSets(sets) {
     return (sets || [])
-      .filter(s => s.done && num(s.reps) > 0)
+      .filter(s => s.done && num(s.reps) > 0 && !s.warmup)
       .map(s => ({ w: num(s.weight) || 0, r: num(s.reps), rir: num(s.rir), doubtful: !!s.doubtful, note: s.note || '' }));
   }
 
@@ -68,9 +68,12 @@ const Stats = (() => {
     for (const s of sorted) {
       const entries = s.exercises.filter(e => e.exerciseId === exId);
       if (!entries.length) continue;
-      const sets = validSets(entries.flatMap(e => e.sets));
+      const all = entries.flatMap(e => e.sets);
+      const sets = validSets(all);
       if (!sets.length) continue;
-      out.push({ session: s, date: s.start, sets, m: metrics(sets, opts), c: metrics(sets.filter(x => !x.doubtful), opts) });
+      // raw: todas las series hechas en orden (incluye calentamiento), para "anterior" serie a serie
+      const raw = all.filter(x => x.done && num(x.reps) > 0).map(x => ({ w: num(x.weight) || 0, r: num(x.reps), warmup: !!x.warmup }));
+      out.push({ session: s, date: s.start, sets, raw, m: metrics(sets, opts), c: metrics(sets.filter(x => !x.doubtful), opts) });
     }
     return out;
   }
@@ -206,5 +209,72 @@ const Stats = (() => {
     };
   }
 
-  return { e1rm, validSets, metrics, history, prs, compare, trend, setsStr, cmpSet };
+  /** Titular de una línea: qué cambió respecto a la sesión anterior */
+  function headline(prev, cur) {
+    const P = prev.m, C = cur.m;
+    const dW = round(C.mainW - P.mainW, 2);
+    const oneLoad = Object.keys(C.byW).length === 1 && Object.keys(P.byW).length === 1;
+    const at = !oneLoad ? ' en total' : C.mainW > 0 ? ' con ' + Fmt.kg(C.mainW) : '';
+    if (dW > 0) return { tone: 'up', text: `Subiste a ${Fmt.kg(C.mainW)} (${Fmt.signed(dW, 2, ' kg')})` };
+    if (dW < 0) return { tone: 'down', text: `Bajaste a ${Fmt.kg(C.mainW)} (${Fmt.signed(dW, 2, ' kg')})` };
+    if (C.n !== P.n) {
+      const d = round(C.avgR - P.avgR, 1);
+      const at2 = at === ' en total' ? '' : at;
+      return { tone: tone(d), text: d === 0 ? `Mismas reps por serie${at2}` : `${Fmt.signed(d, 1)} reps por serie${at2}` };
+    }
+    const d = C.total - P.total;
+    return { tone: tone(d), text: d === 0 ? `Mismas reps${at}` : `${Fmt.signed(d, 0)} ${reps(d)}${at}` };
+  }
+
+  /** Mejor serie con la carga más alta de la sesión */
+  function topSet(sets) {
+    const w = Math.max(...sets.map(s => s.w));
+    return { w, r: Math.max(...sets.filter(s => s.w === w).map(s => s.r)) };
+  }
+  const avgAt = (sets, w) => mean(sets.filter(s => s.w === w).map(s => s.r));
+
+  /** Veredicto de progreso: hoy vs ~4 semanas atrás.
+      Con carga: e1RM de la mejor serie. Peso corporal/lastre: reps con la misma carga. */
+  function progress(hist, bodyweight) {
+    const ok = hist.filter(h => h.c);
+    if (ok.length < 2) return { dir: 'insuf' };
+    const last = ok[ok.length - 1];
+    const cut = last.date - 28 * 864e5;
+    let ri = -1;
+    for (let i = ok.length - 2; i >= 0; i--) if (ok[i].date <= cut) { ri = i; break; }
+    if (ri < 0) ri = 0;
+    const ref = ok[ri];
+    const clean = h => h.sets.filter(s => !s.doubtful);
+    const out = { ref, last };
+    if (!bodyweight && last.c.bestE && ref.c.bestE) {
+      // promedio de 2 sesiones para no depender de un día bueno o malo
+      const cur = mean(ok.slice(-2).map(h => h.c.bestE).filter(Boolean));
+      const bef = mean(ok.slice(Math.max(0, ri - 1), ri + 1).map(h => h.c.bestE).filter(Boolean));
+      const pct = (cur - bef) / bef;
+      out.kind = 'e1rm'; out.pct = pct; out.from = bef; out.to = cur;
+      out.dir = pct > 0.02 ? 'up' : pct < -0.02 ? 'down' : 'flat';
+      out.text = `e1RM ${Fmt.pct(pct)}`;
+      out.sub = `${Fmt.kg(bef, 1)} → ${Fmt.kg(cur, 1)}`;
+      return out;
+    }
+    const a = topSet(clean(ref)), b = topSet(clean(last));
+    const load = w => w > 0 ? (bodyweight ? '+' : '') + Fmt.kg(w) : 'peso corporal';
+    out.kind = 'reps';
+    if (b.w > a.w) {
+      out.dir = b.r >= a.r * 0.7 ? 'up' : 'flat';
+      out.text = `Más carga: ${Fmt.signed(b.w - a.w, 2, ' kg')}`;
+    } else if (b.w < a.w) {
+      out.dir = b.r > a.r * 1.3 ? 'flat' : 'down';
+      out.text = `Menos carga: ${Fmt.signed(b.w - a.w, 2, ' kg')}`;
+    } else {
+      const d = round(avgAt(clean(last), b.w) - avgAt(clean(ref), a.w), 1);
+      out.dir = d >= 0.5 ? 'up' : d <= -0.5 ? 'down' : 'flat';
+      out.text = d === 0 ? `Mismas reps con ${load(b.w)}` : `${Fmt.signed(d, 1)} reps por serie con ${load(b.w)}`;
+    }
+    const fs = t => (t.w > 0 ? (bodyweight ? '+' : '') + Fmt.n(t.w, 2) + ' kg × ' : (bodyweight ? 'PC × ' : '')) + t.r;
+    out.sub = `${fs(a)} → ${fs(b)} (mejor serie)`;
+    return out;
+  }
+
+  return { headline, progress, topSet, e1rm, validSets, metrics, history, prs, compare, trend, setsStr, cmpSet };
 })();

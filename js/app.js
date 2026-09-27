@@ -343,12 +343,14 @@ SHEETS.exForm = s => {
 function buildActiveEx(exId, target) {
   const ex = exById(exId);
   const last = lastEntry(exId);
-  const n = Math.max(1, +target.sets || (last ? last.sets.length : 3));
-  const sets = [];
+  const raw = last ? last.raw : [];
+  const warm = raw.filter(x => x.warmup), work = raw.filter(x => !x.warmup);
+  const n = Math.max(1, +target.sets || work.length || 3);
+  const mk = (w, warmup) => ({ weight: w > 0 ? inp(w) : '', reps: '', rir: '', note: '', doubtful: false, warmup, done: false });
+  const sets = warm.map(x => mk(x.w, true));
   for (let i = 0; i < n; i++) {
-    const ls = last && (last.sets[i] || last.sets[last.sets.length - 1]);
-    const w = ls ? ls.w : target.weight;
-    sets.push({ weight: w > 0 ? inp(w) : '', reps: '', rir: '', note: '', doubtful: false, done: false });
+    const ls = work[i] || work[work.length - 1];
+    sets.push(mk(ls ? ls.w : target.weight, false));
   }
   return { key: uid(), exerciseId: exId, name: ex ? ex.name : '', target: clone(target), note: '', sets };
 }
@@ -404,12 +406,15 @@ VIEWS.workout = () => {
       ${e.note ? `<div class="wex-note mine">${I.note}<span>${esc(e.note)}</span></div>` : ''}
       <div class="sets${useRir() ? '' : ' no-rir'}">
         <div class="set-h"><span>SERIE</span><span>ANTERIOR</span><span>${wLabel}</span><span>REPS</span>${useRir() ? '<span>RIR</span>' : ''}<span></span></div>`;
+    const pWarm = prev ? prev.raw.filter(x => x.warmup) : [], pWork = prev ? prev.raw.filter(x => !x.warmup) : [];
+    let nw = 0, nk = 0;
     e.sets.forEach((s, si) => {
-      const ps = prev && prev.sets[si];
+      const ps = s.warmup ? pWarm[nw++] : pWork[nk++];
+      const label = s.warmup ? 'C' : nk;
       const wPh = ps ? inp(ps.w) : (t.weight ? inp(t.weight) : '0');
       const rPh = ps ? String(ps.r) : (t.repMin && t.repMax && t.repMin != t.repMax ? `${t.repMin}-${t.repMax}` : (t.repMin || t.repMax || ''));
-      h += `<div class="set-row${s.done ? ' done' : ''}" data-ei="${ei}" data-si="${si}">
-        <button class="set-n${s.doubtful ? ' dub' : ''}${s.note ? ' has-note' : ''}" data-a="setMenu" data-ei="${ei}" data-si="${si}" aria-label="Opciones de la serie">${si + 1}</button>
+      h += `<div class="set-row${s.done ? ' done' : ''}${s.warmup ? ' warm' : ''}" data-ei="${ei}" data-si="${si}">
+        <button class="set-n${s.doubtful ? ' dub' : ''}${s.warmup ? ' warm' : ''}${s.note ? ' has-note' : ''}" data-a="setMenu" data-ei="${ei}" data-si="${si}" aria-label="Opciones de la serie">${label}</button>
         <span class="set-prev">${ps ? (ps.w > 0 ? Fmt.n(ps.w, 2) + '×' : '') + ps.r : '—'}</span>
         <input class="inp" inputmode="decimal" data-f="weight" value="${esc(s.weight)}" placeholder="${esc(wPh)}" aria-label="Peso">
         <input class="inp" inputmode="numeric" enterkeyhint="done" data-f="reps" value="${esc(s.reps)}" placeholder="${esc(rPh)}" aria-label="Reps">
@@ -423,8 +428,8 @@ VIEWS.workout = () => {
     // comparación en vivo cuando ya se hicieron al menos tantas series como la vez anterior
     const doneSets = Stats.validSets(e.sets);
     if (prev && doneSets.length && doneSets.length >= prev.sets.length) {
-      const cur = { sets: doneSets, m: Stats.metrics(doneSets, { noE1rm: noE1rm(e.exerciseId) }) };
-      h += cmpBlock(Stats.compare(prev, cur), 'Hoy vs anterior');
+      const hl = Stats.headline(prev, { m: Stats.metrics(doneSets, { noE1rm: noE1rm(e.exerciseId) }) });
+      h += `<div class="hl-live t-${hl.tone}"><span>Hoy vs anterior</span><b>${esc(hl.text)}</b></div>`;
     }
     h += '</section>';
   });
@@ -449,6 +454,7 @@ SHEETS.setMenu = s => {
       ${useRir() ? `<div class="field"><span>RIR <small>(reps en reserva)</small></span><div class="chips">
         ${[0, 1, 2, 3, 4, 5].map(v => `<button class="chip num${rir === v ? ' on' : ''}" data-a="setRir" data-v="${v}">${v}</button>`).join('')}
         <button class="chip${rir == null ? ' on' : ''}" data-a="setRir" data-v="">—</button></div></div>` : ''}
+      <button class="toggle${st.warmup ? ' on' : ''}" data-a="setWarm"><span class="tg"></span><span><b>Serie de calentamiento</b><small>Aproximación: se guarda pero no cuenta en estadísticas ni PRs</small></span></button>
       <button class="toggle${st.doubtful ? ' on' : ''}" data-a="setDoubt"><span class="tg"></span><span><b>Serie dudosa</b><small>Técnica o rango dudosos: se guarda pero no cuenta para PRs</small></span></button>
       <label class="field"><span>Nota</span><textarea id="setnote" data-bind="set.note" rows="2" placeholder="Opcional">${esc(st.note)}</textarea></label>
       <button class="btn btn-primary btn-block" data-a="closeSheet">Listo</button>
@@ -576,7 +582,7 @@ function doFinish() {
     exercises: a.exercises.map(e => ({
       exerciseId: e.exerciseId, name: exName(e), target: e.target, note: e.note || '',
       sets: e.sets.filter(s => s.done && num(s.reps) > 0).map(s => ({
-        weight: num(s.weight) || 0, reps: num(s.reps), rir: num(s.rir), note: s.note || '', doubtful: !!s.doubtful, done: true, at: s.at || null,
+        weight: num(s.weight) || 0, reps: num(s.reps), rir: num(s.rir), note: s.note || '', doubtful: !!s.doubtful, warmup: !!s.warmup, done: true, at: s.at || null,
       })),
     })).filter(e => e.sets.length),
   };
@@ -612,6 +618,18 @@ function prBlock(rep) {
       `<span>${esc(lbl(p.label))}: <strong>${esc(p.val)}</strong>${p.prev ? ` <em>(antes ${esc(p.prev)})</em>` : ''}</span>`).join('')}</div></div>`).join('')}</div>`;
 }
 
+/** una línea por ejercicio + detalle opcional */
+function hlList(rep) {
+  let h = '<div class="card hls">';
+  for (const r of rep) {
+    const hl = r.prev ? Stats.headline(r.prev, r.entry) : { tone: 'eq', text: 'Primera vez' };
+    h += `<div class="hl-row"><div><b>${esc(r.name)}</b><small>${esc(Stats.setsStr(r.entry.sets))}</small></div><span class="t-${hl.tone}">${esc(hl.text)}</span></div>`;
+    if (ui.detail && r.cmp) h += cmpBlock(r.cmp, 'vs ' + Fmt.date(r.prev.date) + ' · ' + Stats.setsStr(r.prev.sets));
+  }
+  h += `<button class="link hl-more" data-a="toggleDetail">${ui.detail ? 'Ocultar detalle' : 'Ver detalle de la comparación'}</button></div>`;
+  return h;
+}
+
 VIEWS.summary = () => {
   const s = D.sessions.find(x => x.id === ui.params.id);
   if (!s) return '';
@@ -619,11 +637,7 @@ VIEWS.summary = () => {
   let h = `<header class="hero done"><div class="eyebrow">${esc(s.routineName)} · ${esc(Fmt.dLong(s.start))}</div><h1>Entrenamiento completado</h1></header>`;
   h += statGrid(sessionTotals(s));
   h += prBlock(rep);
-  h += `<div class="sec-h"><h3>Cambios respecto a la sesión anterior</h3></div>`;
-  for (const r of rep) {
-    h += `<div class="card"><div class="card-h"><b>${esc(r.name)}</b><span class="muted sm">${esc(Stats.setsStr(r.entry.sets))}</span></div>
-      ${r.cmp ? cmpBlock(r.cmp, r.prev ? 'vs ' + Fmt.date(r.prev.date) + ' · ' + Stats.setsStr(r.prev.sets) : '') : '<p class="hint">Primera sesión registrada: queda como referencia.</p>'}</div>`;
-  }
+  h += `<div class="sec-h"><h3>Vs la sesión anterior</h3></div>` + hlList(rep);
   h += `<div class="sticky-foot"><button class="btn btn-primary btn-block" data-a="tab" data-v="home">Listo</button></div>`;
   return h;
 };
@@ -666,18 +680,20 @@ VIEWS.session = () => {
     `${Fmt.date(s.start)} · ${Fmt.time(s.start)}–${Fmt.time(s.end || s.start)}`);
   h += statGrid(sessionTotals(s));
   h += prBlock(rep);
-  for (const e of s.exercises) {
+  s.exercises.forEach((e, ei) => {
+    let nk = 0;
     const r = repById[e.exerciseId];
     const ex = exById(e.exerciseId);
-    const vol = e.sets.reduce((a, x) => a + (x.weight || 0) * (x.reps || 0), 0);
+    const vol = e.sets.reduce((a, x) => a + (x.warmup ? 0 : (x.weight || 0) * (x.reps || 0)), 0);
     h += `<div class="card"><div class="card-h"><b>${esc(exName(e))}</b>${ex ? `<button class="link" data-a="openAnalysis" data-id="${ex.id}">Análisis ${I.right}</button>` : ''}</div>
       <table class="tbl"><thead><tr><th>Serie</th><th>Peso</th><th>Reps</th>${useRir() ? '<th>RIR</th>' : ''}<th>Vol.</th></tr></thead><tbody>
-      ${e.sets.map((x, i) => `<tr class="${x.doubtful ? 'dub' : ''}"><td>${i + 1}${x.doubtful ? ' <span class="tag">dudosa</span>' : ''}</td><td>${Fmt.kg(x.weight)}</td><td>${x.reps}</td>${useRir() ? `<td>${x.rir != null ? Fmt.n(x.rir) : '—'}</td>` : ''}<td>${Fmt.n((x.weight || 0) * x.reps, 0)}</td></tr>
+      ${e.sets.map((x, i) => `<tr class="${x.doubtful || x.warmup ? 'dub' : ''}" data-a="sessWarm" data-e="${ei}" data-i="${i}"><td>${x.warmup ? 'C' : ++nk}${x.warmup ? ' <span class="tag warm">calent.</span>' : ''}${x.doubtful ? ' <span class="tag">dudosa</span>' : ''}</td><td>${Fmt.kg(x.weight)}</td><td>${x.reps}</td>${useRir() ? `<td>${x.rir != null ? Fmt.n(x.rir) : '—'}</td>` : ''}<td>${x.warmup ? '—' : Fmt.n((x.weight || 0) * x.reps, 0)}</td></tr>
         ${x.note ? `<tr class="note-r"><td colspan="${useRir() ? 5 : 4}">${esc(x.note)}</td></tr>` : ''}`).join('')}
-      </tbody><tfoot><tr><td>Total</td><td></td><td>${e.sets.reduce((a, x) => a + x.reps, 0)}</td>${useRir() ? '<td></td>' : ''}<td>${Fmt.n(vol, 0)}</td></tr></tfoot></table>
+      </tbody><tfoot><tr><td>Total</td><td></td><td>${e.sets.reduce((a, x) => a + (x.warmup ? 0 : x.reps), 0)}</td>${useRir() ? '<td></td>' : ''}<td>${Fmt.n(vol, 0)}</td></tr></tfoot></table>
       ${e.note ? `<p class="wex-note mine">${I.note}<span>${esc(e.note)}</span></p>` : ''}
-      ${r && r.cmp ? cmpBlock(r.cmp, 'vs sesión anterior (' + Fmt.date(r.prev.date) + ')') : ''}</div>`;
-  }
+      ${r && r.prev ? (hl => `<div class="hl-live t-${hl.tone}"><span>Vs ${Fmt.dShort(r.prev.date)}</span><b>${esc(hl.text)}</b></div>`)(Stats.headline(r.prev, r.entry)) : ''}</div>`;
+  });
+  h += `<p class="hint sm">Tocá una serie para marcarla o desmarcarla como calentamiento.</p>`;
   return h;
 };
 
@@ -753,6 +769,45 @@ function argBest(hist, get) {
   return { v, at };
 }
 
+/** filas de sesiones de un ejercicio */
+function sessRows(list, hist) {
+  const prs = Stats.prs(hist);
+  return list.map(x => {
+    const i = hist.indexOf(x);
+    return `<button class="hrow" data-a="openSession" data-id="${x.session.id}"><div><b>${Fmt.date(x.date)}</b><small>${esc(x.session.routineName)}</small></div>
+      <div class="hrow-r"><span>${esc(Stats.setsStr(x.sets))}</span><small>${x.m.bestE ? 'e1RM ' + Fmt.n(x.m.bestE, 1) : x.m.total + ' reps'}${prs[i] && prs[i].length ? ` · <b class="t-up">${prs[i].length} PR</b>` : ''}</small></div></button>`;
+  }).join('');
+}
+
+/** Tarjeta de progreso: veredicto + comparación + un gráfico */
+function progressCard(ex, hist) {
+  const bw = noE1rm(ex.id) || !hist.some(x => x.c && x.c.bestE);
+  const p = Stats.progress(hist, bw);
+  let h = '<div class="card chart-card prog" data-k="p">';
+  if (p.dir === 'insuf') {
+    return h + `<div class="verdict t-eq"><small>Progreso</small><b>Faltan datos</b></div><p class="hint sm">Con 2 sesiones o más aparece la comparación.</p></div>`;
+  }
+  const V = { up: ['Subiendo', '↗'], flat: ['Estable', '→'], down: ['Bajando', '↘'] }[p.dir];
+  const weeks = Math.round((p.last.date - p.ref.date) / (7 * DAY));
+  const since = weeks >= 4 ? `últimas ~${weeks} semanas` : 'desde el ' + Fmt.dShort(p.ref.date);
+  const best = h2 => { const t = Stats.topSet(h2.sets.filter(s => !s.doubtful)); return (t.w > 0 ? Fmt.n(t.w, 2) + '×' : '') + t.r; };
+  h += `<div class="verdict t-${p.dir === 'flat' ? 'eq' : p.dir}"><small>Progreso · ${esc(since)}</small><b>${V[1]} ${V[0]}</b><span>${esc(p.text)} <em>(${esc(p.sub)})</em></span></div>
+    <div class="vs"><div><small>${Fmt.dShort(p.ref.date)}</small><b>${esc(best(p.ref))}</b></div><i>→</i><div><small>${Fmt.dShort(p.last.date)}</small><b>${esc(best(p.last))}</b></div></div>`;
+  const range = ui.pRange || '3m';
+  const sub = applyRange(hist, range).filter(x => x.c);
+  let pts;
+  if (!bw) {
+    pts = sub.filter(x => x.c.bestE).map(x => ({ x: x.date, y: x.c.bestE, desc: `${Fmt.date(x.date)} · e1RM ${Fmt.kg(x.c.bestE, 1)} · ${best(x)}` }));
+  } else {
+    pts = sub.map(x => { const t = Stats.topSet(x.sets.filter(s => !s.doubtful)); return { x: x.date, y: t.r, desc: `${Fmt.date(x.date)} · ${t.w > 0 ? '+' + Fmt.kg(t.w) + ' × ' : ''}${t.r} reps` }; });
+  }
+  ui.chartPtsP = pts;
+  h += `<div class="chart-lbl">${bw ? 'Reps de la mejor serie' : 'e1RM estimado (kg)'}</div>
+    <div class="readout">${pts.length ? esc(pts[pts.length - 1].desc) : ''}</div><div class="chart">${Charts.line(pts, v => Fmt.n(v, bw ? 0 : 1))}</div>
+    <div class="chips seg">${[['30d', '1 mes'], ['3m', '3 meses'], ['all', 'Todo']].map(([k, l]) => `<button class="chip${k === range ? ' on' : ''}" data-a="pRange" data-v="${k}">${l}</button>`).join('')}</div></div>`;
+  return h;
+}
+
 VIEWS.exercise = () => {
   const ex = exById(ui.params.id);
   if (!ex) return topbar('Ejercicio') + '<p class="hint">El ejercicio no existe.</p>';
@@ -778,16 +833,26 @@ VIEWS.exercise = () => {
   for (const s of cSets) if (!bestSet || Stats.cmpSet(s, bestSet) > 0) bestSet = s;
   const bestR = cSets.reduce((b, s) => (!b || s.r > b.r || (s.r === b.r && s.w > b.w)) ? s : b, null);
 
-  // ---- mosaico principal
-  h += `<div class="stats">
+  // ---- progreso (lo principal)
+  h += progressCard(ex, hist);
+
+  // ---- mejores marcas
+  h += `<div class="sec-h"><h3>Mejores marcas</h3></div><div class="stats">
     ${hasW ? `<div><small>${wName} máx.</small><b>${bW.v != null ? Fmt.n(bW.v, 2) : '—'}<em> kg</em></b></div>` : `<div><small>Reps máx.</small><b>${bR.v ?? '—'}</b></div>`}
     <div><small>e1RM</small><b>${bE.v ? Fmt.n(bE.v, 1) + '<em> kg</em>' : '—'}</b></div>
     <div><small>Mejor serie</small><b class="sm">${bestSet ? (bestSet.w > 0 ? Fmt.n(bestSet.w, 2) + '×' : '') + bestSet.r : '—'}</b></div>
     <div><small>Sesiones</small><b>${hist.length}</b></div></div>`;
 
+  if (!ui.more) {
+    h += `<div class="sec-h"><h3>Últimas sesiones</h3></div><div class="card">${sessRows(hist.slice(-5).reverse(), hist)}</div>
+      <button class="btn btn-ghost btn-block" data-a="toggleMore">Ver más estadísticas</button>`;
+    return h;
+  }
+  h += `<button class="btn btn-ghost btn-block more-btn" data-a="toggleMore">Ocultar estadísticas detalladas</button>`;
+
   // ---- gráfico
   const mDef = METRICS.find(m => m.k === ui.chart.metric && (m.k !== 'rir' || useRir())) || METRICS.find(m => m.k === 'e1rm');
-  h += `<div class="card chart-card"><div class="chips scroll">${METRICS.filter(m => m.k !== 'rir' || useRir()).map(m => `<button class="chip${m.k === mDef.k ? ' on' : ''}" data-a="chartMetric" data-v="${m.k}">${m.label}</button>`).join('')}</div>`;
+  h += `<div class="sec-h"><h3>Gráficos</h3></div><div class="card chart-card" data-k="m"><div class="chips scroll">${METRICS.filter(m => m.k !== 'rir' || useRir()).map(m => `<button class="chip${m.k === mDef.k ? ' on' : ''}" data-a="chartMetric" data-v="${m.k}">${m.label}</button>`).join('')}</div>`;
   let svg, pts;
   if (mDef.bars) {
     const b = freqBuckets(hist, ui.chart.range);
@@ -801,7 +866,7 @@ VIEWS.exercise = () => {
       : Charts.line(sub, v => Fmt.n(v, v >= 100 ? 0 : 1));
   }
   ui.chartPts = pts;
-  h += `<div class="readout" id="readout">${pts.length ? esc(pts[pts.length - 1].desc) : ''}</div><div class="chart">${svg}</div>
+  h += `<div class="readout">${pts.length ? esc(pts[pts.length - 1].desc) : ''}</div><div class="chart">${svg}</div>
     <div class="chips seg">${RANGES.map(([k, l]) => `<button class="chip${k === ui.chart.range ? ' on' : ''}" data-a="chartRange" data-v="${k}">${l}</button>`).join('')}</div></div>`;
 
   // ---- tendencia
@@ -943,7 +1008,7 @@ VIEWS.settings = () => {
       <label class="btn btn-ghost btn-block">Importar copia<input type="file" id="importFile" accept="application/json,.json" hidden></label>
       <button class="btn btn-text danger btn-block" data-a="resetData">Borrar todos los datos</button>
     </div>
-    <p class="foot-note">Hierro · v1.3</p>`;
+    <p class="foot-note">Hierro · v1.4</p>`;
 };
 
 /* ============================== sheets ============================== */
@@ -1118,11 +1183,13 @@ const A = {
   openAnalysis: el => { closeSheet(false); go('exercise', { id: el.dataset.id }); },
   chartMetric: el => { ui.chart.metric = el.dataset.v; render(); },
   chartRange: el => { ui.chart.range = el.dataset.v; render(); },
+  pRange: el => { ui.pRange = el.dataset.v; render(); },
   chartPt: el => {
-    const i = +el.dataset.i, p = ui.chartPts[i];
+    const card = el.closest('.chart-card');
+    const i = +el.dataset.i, p = (card.dataset.k === 'p' ? ui.chartPtsP : ui.chartPts)[i];
     if (!p) return;
-    document.getElementById('readout').textContent = p.desc;
-    document.querySelectorAll('.c-dot, .c-bar').forEach(n => n.classList.remove('sel'));
+    card.querySelector('.readout').textContent = p.desc;
+    card.querySelectorAll('.c-dot, .c-bar').forEach(n => n.classList.remove('sel'));
     const svg = el.closest('svg');
     const dot = svg.querySelector(`.c-dot[data-i="${i}"]`) || svg.querySelectorAll('.c-bar')[i];
     if (dot) dot.classList.add('sel');
@@ -1132,6 +1199,15 @@ const A = {
   minimize: () => tab('home'),
   finish: () => finishWorkout(),
   cancelWorkout: () => confirmBox({ title: '¿Descartar entrenamiento?', text: 'No se guardará nada de esta sesión.', ok: 'Descartar', danger: true, onOk: discardWorkout }),
+  toggleDetail: () => { ui.detail = !ui.detail; render(); },
+  toggleMore: () => { ui.more = !ui.more; render(); },
+  sessWarm: el => {
+    const s = D.sessions.find(x => x.id === ui.params.id);
+    const st = s && s.exercises[+el.dataset.e].sets[+el.dataset.i];
+    if (!st) return;
+    st.warmup = !st.warmup; Store.save(); render();
+    toast(st.warmup ? 'Marcada como calentamiento' : 'Marcada como serie de trabajo');
+  },
   toggleSet: el => {
     const ei = +el.dataset.ei, si = +el.dataset.si;
     const e = D.active.exercises[ei], s = e.sets[si];
@@ -1169,6 +1245,11 @@ const A = {
     st.rir = el.dataset.v;
     Store.save();
     el.parentElement.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === el));
+  },
+  setWarm: el => {
+    const s = ui.sheet, st = D.active.exercises[s.ei].sets[s.si];
+    st.warmup = !st.warmup; Store.save();
+    el.classList.toggle('on', st.warmup);
   },
   setDoubt: el => {
     const s = ui.sheet, st = D.active.exercises[s.ei].sets[s.si];
@@ -1367,6 +1448,21 @@ function applyTheme() {
   document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#0d0e10' : '#f3f3ef');
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
+
+/* migraciones de datos (una sola vez) */
+if (!D.settings.migWarmBench) {
+  for (const se of D.sessions) {
+    if (!String(se.id).startsWith('strong-push-')) continue;
+    for (const e of se.exercises) if (e.name === 'Bench Press (Barbell)' && e.sets.length > 2) { e.sets[0].warmup = true; e.sets[1].warmup = true; }
+  }
+  // en la rutina quedan solo las series de trabajo
+  for (const r of D.routines) for (const it of r.items) {
+    const ex = exById(it.exerciseId);
+    if (String(r.id).startsWith('strong-push') && ex && ex.id === 'strong-press-banca-barra' && +it.sets === 4) it.sets = 2;
+  }
+  D.settings.migWarmBench = true;
+  Store.save();
+}
 
 applyTheme();
 history.replaceState({ d: 0 }, '');
