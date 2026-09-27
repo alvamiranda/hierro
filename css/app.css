@@ -311,6 +311,33 @@ body.has-timer .view.with-tabs { padding-bottom: calc(var(--tab-h) + var(--timer
 .more-btn { margin-top: 14px; }
 .tbl tr[data-a] { cursor: pointer; }
 
+/* ---------- progreso general ---------- */
+.vbar { display: flex; gap: 3px; height: 10px; margin: 14px 0 8px; }
+.vbar i { border-radius: 4px; }
+.vb-up { background: var(--up); }
+.vb-flat { background: var(--surface-3); }
+.vb-down { background: var(--down); }
+.vleg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; font-weight: 700; }
+.const { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.const small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; }
+.const b { font-size: 28px; font-weight: 800; line-height: 1.1; }
+.const span { display: block; color: var(--muted); font-size: 13px; }
+.spark { display: flex; align-items: flex-end; gap: 4px; height: 48px; flex: 0 0 132px; }
+.spark i { flex: 1; background: var(--surface-3); border-radius: 3px; }
+.spark i.now { background: var(--accent); }
+.groups { padding: 2px 8px 2px 14px; }
+.grp { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 0; border-bottom: 1px solid var(--line); color: var(--text); }
+.grp:last-child { border-bottom: 0; }
+.grp > svg { color: var(--faint); width: 18px; height: 18px; }
+.grp-n { flex: 1; min-width: 0; }
+.grp-n b { display: block; font-size: 16px; }
+.grp-n small { font-size: 13px; font-weight: 700; }
+.grp-s { width: 78px; text-align: right; }
+.grp-s b { font-size: 18px; font-weight: 800; }
+.meter { display: block; height: 4px; border-radius: 3px; background: var(--surface-3); margin-top: 4px; overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--accent-text); }
+.ex-r small { display: block; color: var(--muted); font-size: 12px; white-space: normal; }
+
 /* ---------- temporizador ---------- */
 .timer {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;

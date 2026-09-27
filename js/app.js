@@ -168,7 +168,7 @@ function render() {
 
 function tabbar() {
   const t = (v, icon, label) => `<button class="tab${ui.root === v ? ' on' : ''}" data-a="tab" data-v="${v}">${icon}<span>${label}</span></button>`;
-  return `<nav class="tabbar">${t('home', I.lift, 'Entrenar')}${t('history', I.hist, 'Historial')}${t('exercises', I.list, 'Ejercicios')}${t('settings', I.gear, 'Ajustes')}</nav>`;
+  return `<nav class="tabbar">${t('home', I.lift, 'Entrenar')}${t('progress', I.chart, 'Progreso')}${t('history', I.hist, 'Historial')}${t('exercises', I.list, 'Ejercicios')}${t('settings', I.gear, 'Ajustes')}</nav>`;
 }
 
 function topbar(title, right = '', sub = '') {
@@ -986,6 +986,114 @@ VIEWS.exercise = () => {
 
 /* ------------------------------ AJUSTES ------------------------------ */
 
+/* ------------------------------ PROGRESO GENERAL ------------------------------ */
+
+const WIN = 28 * DAY;       // ventana para series por semana
+const STALE = 42 * DAY;     // sin registrar hace más de esto = inactivo
+const VERD = { up: ['↗', 'Subiendo'], flat: ['→', 'Estable'], down: ['↘', 'Bajando'] };
+
+/** estado de cada ejercicio: veredicto, cambio y series de trabajo por semana */
+function exStatus() {
+  const now = Date.now();
+  return D.exercises.map(ex => {
+    const hist = histOf(ex.id);
+    const last = hist[hist.length - 1];
+    const bw = noE1rm(ex.id) || !hist.some(x => x.c && x.c.bestE);
+    const recent = hist.filter(x => x.date >= now - WIN);
+    const setsWk = recent.reduce((a, x) => a + x.sets.length, 0) / 4;
+    let p = { dir: 'insuf' };
+    if (!last) p = { dir: 'none' };
+    else if (last.date < now - STALE) p = { dir: 'stale' };
+    else p = Stats.progress(hist, bw);
+    return { ex, hist, last, p, setsWk, cat: ex.category || 'Sin categoría' };
+  });
+}
+
+function verdictBar(n) {
+  const tot = n.up + n.flat + n.down;
+  if (!tot) return '';
+  const seg = (k, v) => v ? `<i class="vb-${k}" style="flex:${v}"></i>` : '';
+  return `<div class="vbar">${seg('up', n.up)}${seg('flat', n.flat)}${seg('down', n.down)}</div>
+    <div class="vleg"><span class="t-up">↗ ${n.up} subiendo</span><span class="t-eq">→ ${n.flat} estable${n.flat === 1 ? '' : 's'}</span><span class="t-down">↘ ${n.down} bajando</span></div>`;
+}
+
+const countDirs = list => list.reduce((n, x) => { if (n[x.p.dir] != null) n[x.p.dir]++; return n; }, { up: 0, flat: 0, down: 0 });
+
+function groupDir(n) {
+  const tot = n.up + n.flat + n.down;
+  if (!tot) return null;
+  if (n.up > tot / 2) return 'up';
+  if (n.down > tot / 2) return 'down';
+  return 'flat';
+}
+
+VIEWS.progress = () => {
+  let h = `<header class="hero"><div class="eyebrow">Últimas ~4 semanas</div><h1>Progreso</h1></header>`;
+  if (!D.sessions.length) return h + `<div class="empty"><div class="empty-ic">${I.chart}</div><p><b>Sin datos todavía.</b></p><p>Tu progreso aparece cuando registres entrenamientos.</p></div>`;
+  const st = exStatus();
+  const judged = st.filter(x => VERD[x.p.dir]);
+  const n = countDirs(st);
+
+  // ---- general
+  h += `<div class="card prog">`;
+  if (judged.length) {
+    const d = groupDir(n);
+    h += `<div class="verdict t-${d === 'flat' ? 'eq' : d}"><small>General</small><b>${n.up} de ${judged.length}</b><span>ejercicios subiendo</span></div>${verdictBar(n)}`;
+  } else {
+    h += `<div class="verdict t-eq"><small>General</small><b>Faltan datos</b><span>Cada ejercicio necesita 2 sesiones o más.</span></div>`;
+  }
+  // constancia: entrenamientos por semana, últimas 8 semanas
+  const monday = new Date(); monday.setHours(0, 0, 0, 0); monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const weeks = [];
+  for (let i = 7; i >= 0; i--) {
+    const a = +monday - i * 7 * DAY, b = a + 7 * DAY;
+    weeks.push({ a, v: D.sessions.filter(s => s.start >= a && s.start < b).length });
+  }
+  const last4 = D.sessions.filter(s => s.start >= Date.now() - WIN).length / 4;
+  const mx = Math.max(1, ...weeks.map(w => w.v));
+  h += `<div class="const"><div><small>Constancia</small><b>${Fmt.n(last4, 1)}</b><span>entrenamientos / semana</span></div>
+    <div class="spark">${weeks.map((w, i) => `<i class="${i === 7 ? 'now' : ''}" style="height:${Math.max(6, w.v / mx * 100)}%" title="${w.v}"></i>`).join('')}</div></div>
+    <p class="hint sm">Barras: últimas 8 semanas (la última es la actual).</p></div>`;
+
+  // ---- por grupo muscular
+  const cats = [...CATS, 'Sin categoría'];
+  const groups = cats.map(c => {
+    const list = st.filter(x => x.cat === c && x.p.dir !== 'none');
+    return { c, list, n: countDirs(list), sets: list.reduce((a, x) => a + x.setsWk, 0) };
+  }).filter(g => g.list.length);
+  h += `<div class="sec-h"><h3>Por grupo muscular</h3><span class="muted sm">series/sem</span></div><div class="card groups">`;
+  for (const g of groups) {
+    const tot = g.n.up + g.n.flat + g.n.down;
+    const d = groupDir(g.n);
+    h += `<button class="grp" data-a="openGroup" data-v="${esc(g.c)}">
+      <span class="grp-n"><b>${esc(g.c)}</b><small class="${d ? 't-' + (d === 'flat' ? 'eq' : d) : 'muted'}">${d ? `${VERD[d][0]} ${g.n.up} de ${tot} subiendo` : 'sin datos suficientes'}</small></span>
+      <span class="grp-s"><b>${Fmt.n(g.sets, 1)}</b><span class="meter"><i style="width:${Math.min(100, g.sets / 20 * 100)}%"></i></span></span>
+      ${I.right}</button>`;
+  }
+  h += `</div><p class="hint sm">Series de trabajo por semana (promedio de 4 semanas, sin calentamientos). Referencia orientativa para hipertrofia: ~10–20 por grupo. Cada ejercicio cuenta solo para su categoría.</p>`;
+  return h;
+};
+
+VIEWS.group = () => {
+  const c = ui.params.cat;
+  const list = exStatus().filter(x => x.cat === c).sort((a, b) => (b.last ? b.last.date : 0) - (a.last ? a.last.date : 0));
+  const n = countDirs(list);
+  const sets = list.reduce((a, x) => a + x.setsWk, 0);
+  let h = topbar(c, '', `${Fmt.n(sets, 1)} series de trabajo por semana`);
+  if (n.up + n.flat + n.down) h += `<div class="card">${verdictBar(n)}</div>`;
+  h += '<div class="exlist">';
+  for (const x of list) {
+    let right;
+    if (VERD[x.p.dir]) right = `<b class="t-${x.p.dir === 'flat' ? 'eq' : x.p.dir}">${VERD[x.p.dir][0]} ${VERD[x.p.dir][1]}</b><small>${esc(x.p.text)}</small>`;
+    else if (x.p.dir === 'stale') right = `<b class="muted">Inactivo</b><small>última vez ${Fmt.ago(x.last.date)}</small>`;
+    else if (x.p.dir === 'none') right = `<b class="muted">Sin registros</b>`;
+    else right = `<b class="muted">Faltan datos</b><small>1 sesión</small>`;
+    h += `<button class="ex-i" data-a="openAnalysis" data-id="${x.ex.id}"><div><b>${esc(x.ex.name)}</b><small>${Fmt.n(x.setsWk, 1)} series/sem${x.last ? ' · ' + Fmt.ago(x.last.date) : ''}</small></div>
+      <div class="ex-r">${right}</div></button>`;
+  }
+  return h + '</div>';
+};
+
 VIEWS.settings = () => {
   const st = D.settings;
   const nSets = D.sessions.reduce((a, s) => a + s.exercises.reduce((b, e) => b + e.sets.length, 0), 0);
@@ -1008,7 +1116,7 @@ VIEWS.settings = () => {
       <label class="btn btn-ghost btn-block">Importar copia<input type="file" id="importFile" accept="application/json,.json" hidden></label>
       <button class="btn btn-text danger btn-block" data-a="resetData">Borrar todos los datos</button>
     </div>
-    <p class="foot-note">Hierro · v1.4</p>`;
+    <p class="foot-note">Hierro · v1.5</p>`;
 };
 
 /* ============================== sheets ============================== */
@@ -1165,6 +1273,7 @@ const A = {
     });
   },
   exCat: el => { ui.exCat = el.dataset.v; render(); },
+  openGroup: el => go('group', { cat: el.dataset.v }),
   packLater: el => { ui.packs = ui.packs.filter(p => p.id !== el.dataset.id); render(); },
   packImport: async el => {
     const p = ui.packs.find(x => x.id === el.dataset.id);
