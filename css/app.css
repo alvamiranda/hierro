@@ -495,3 +495,5 @@ body:not(.no-tabs) .timer { bottom: calc(var(--tab-h) + var(--safe-b)); padding-
   .hero h1 { font-size: 30px; }
   .stats b { font-size: 24px; }
 }
+
+.inp.fecha { width: auto; min-width: 160px; text-align: left; padding: 0 10px; font-size: 16px; }

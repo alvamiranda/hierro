@@ -1094,6 +1094,10 @@ VIEWS.group = () => {
   return h + '</div>';
 };
 
+/** Fecha local 'AAAA-MM-DD' de hoy más n días. */
+const isoDia = n => { const d = new Date(); d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
 VIEWS.settings = () => {
   const st = D.settings;
   const nSets = D.sessions.reduce((a, s) => a + s.exercises.reduce((b, e) => b + e.sets.length, 0), 0);
@@ -1107,6 +1111,13 @@ VIEWS.settings = () => {
     </div>
     <div class="sec-h"><h3>Apariencia</h3></div>
     <div class="card"><div class="chips seg">${[['auto', 'Automático'], ['dark', 'Oscuro'], ['light', 'Claro']].map(([k, l]) => `<button class="chip${st.theme === k ? ' on' : ''}" data-a="setTheme" data-v="${k}">${l}</button>`).join('')}</div></div>
+    <div class="sec-h"><h3>Exportar progreso</h3></div>
+    <div class="card form">
+      <p class="hint" style="margin:0">Planilla de Excel con tus series y un resumen por ejercicio (mejor serie, volumen y 1RM estimado).</p>
+      <div class="row2"><span class="lbl">Desde</span><input class="inp fecha" type="date" id="expDesde" value="${ui.expDesde || isoDia(-56)}"></div>
+      <div class="row2"><span class="lbl">Hasta</span><input class="inp fecha" type="date" id="expHasta" value="${ui.expHasta || isoDia(0)}"></div>
+      <button class="btn btn-primary btn-block" data-a="exportProgreso">Exportar progreso</button>
+    </div>
     <div class="sec-h"><h3>Datos</h3></div>
     <div class="card">
       <p class="hint">Todo se guarda en este dispositivo y funciona sin conexión. Hacé copias de seguridad de vez en cuando.</p>
@@ -1116,7 +1127,7 @@ VIEWS.settings = () => {
       <label class="btn btn-ghost btn-block">Importar copia<input type="file" id="importFile" accept="application/json,.json" hidden></label>
       <button class="btn btn-text danger btn-block" data-a="resetData">Borrar todos los datos</button>
     </div>
-    <p class="foot-note">Hierro · v1.5</p>`;
+    <p class="foot-note">Hierro · v1.6</p>`;
 };
 
 /* ============================== sheets ============================== */
@@ -1438,6 +1449,20 @@ const A = {
   },
   setToggle: el => { const k = el.dataset.k; D.settings[k] = !D.settings[k]; Store.save(); el.classList.toggle('on', D.settings[k]); },
   setTheme: el => { D.settings.theme = el.dataset.v; Store.save(); applyTheme(); render(); },
+  exportProgreso: async el => {
+    const desde = document.getElementById('expDesde').value, hasta = document.getElementById('expHasta').value;
+    if (!desde || !hasta || desde > hasta) { toast('Revisá las fechas'); return; }
+    ui.expDesde = desde; ui.expHasta = hasta;
+    el.disabled = true; el.textContent = 'Generando…';
+    try {
+      const r = await Export.descargar(D, desde, hasta);
+      toast(r.series ? `Listo: ${r.series} series` : 'No hay entrenamientos en esas fechas');
+    } catch (e) {
+      toast(e.message || 'No se pudo generar el Excel');
+    } finally {
+      el.disabled = false; el.textContent = 'Exportar progreso';
+    }
+  },
   exportData: () => {
     const blob = new Blob([Store.exportJSON()], { type: 'application/json' });
     const a = document.createElement('a');

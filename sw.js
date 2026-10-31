@@ -1,8 +1,9 @@
 /* Service worker: deja la app disponible sin conexión (cache-first del "shell"). */
-const CACHE = 'hierro-v7';
+const CACHE = 'hierro-v8';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/util.js', 'js/icons.js', 'js/store.js', 'js/stats.js', 'js/charts.js', 'js/app.js',
+  'js/util.js', 'js/icons.js', 'js/store.js', 'js/stats.js', 'js/charts.js', 'js/export.js', 'js/app.js',
+  'js/vendor/exceljs.min.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
 ];
 
